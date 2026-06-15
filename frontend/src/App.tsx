@@ -1,63 +1,44 @@
 import axios from 'axios';
-import { addDays, addWeeks, differenceInCalendarDays, eachDayOfInterval, format, isToday, startOfWeek, subWeeks } from 'date-fns';
+import { addDays, addWeeks, differenceInCalendarDays, eachDayOfInterval, format, isSameDay, isToday, parseISO, startOfWeek, subDays, subWeeks } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
-
-// --- INTERFACES ---
-interface Category {
-  id: number;
-  name: string;
-  basePrice: number;
-  discountPrice: number;
-}
-
-interface Room {
-  id: number;
-  roomNumber: string;
-  category: Category;
-}
-
-interface SelectedSlot {
-  room: Room;
-  date: Date;
-}
+import BookingDrawer from './BookingDrawer';
+import type { Booking, BookingPayload, DailyNote, Room, SelectedSlot } from './types'; // FIXED: import type
 
 export default function App() {
-  // --- STATE ---
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [dailyNotes, setDailyNotes] = useState<DailyNote[]>([]);
+  
   const [isSortedNum, setIsSortedNum] = useState(false);
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
-  
-  // Drawer States
+  const [hoveredDateStr, setHoveredDateStr] = useState<string | null>(null);
+
   const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null);
-  const [checkoutDate, setCheckoutDate] = useState<Date | null>(null);
-  const [guests, setGuests] = useState<number>(2);
-  const [overridePrice, setOverridePrice] = useState<string | null>(null);
+  const [summaryDate, setSummaryDate] = useState<Date | null>(null);
+  const [dailyNoteText, setDailyNoteText] = useState('');
 
-  // Refs for scrolling
   const isScrolling = useRef(false);
-  const headerRef = useRef<HTMLTableSectionElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
 
-  // --- DATA FETCHING ---
   useEffect(() => {
-    axios.get('/api/rooms')
-      .then(response => setRooms(response.data))
-      .catch(error => console.error("Error fetching rooms:", error));
+    Promise.all([
+      axios.get('/api/rooms'),
+      axios.get('/api/bookings'),
+      axios.get('/api/notes')
+    ]).then(([roomsRes, bookingsRes, notesRes]) => {
+      setRooms(roomsRes.data);
+      setBookings(bookingsRes.data);
+      setDailyNotes(notesRes.data);
+    }).catch(error => console.error("Error fetching data:", error));
   }, []);
 
-  // --- CALENDAR DATES ---
   const currentWeekEnd = addDays(currentWeekStart, 6);
   const weekDays = eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd });
-
   const startMonth = format(currentWeekStart, 'LLLL', { locale: bg });
   const endMonth = format(currentWeekEnd, 'LLLL yyyy', { locale: bg });
-  const displayMonth = startMonth === format(currentWeekEnd, 'LLLL', { locale: bg }) 
-    ? endMonth 
-    : `${startMonth} - ${endMonth}`;
+  const displayMonth = startMonth === format(currentWeekEnd, 'LLLL', { locale: bg }) ? endMonth : `${startMonth} - ${endMonth}`;
 
-  // --- SCROLL LOGIC ---
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     if (isScrolling.current) return;
@@ -68,87 +49,105 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const thead = headerRef.current;
-    if (thead) thead.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      if (thead) thead.removeEventListener('wheel', handleWheel);
+    const pill = pillRef.current;
+    if (pill) pill.addEventListener('wheel', handleWheel, { passive: false });
+    return () => { 
+      if (pill) pill.removeEventListener('wheel', handleWheel); 
     };
   }, [handleWheel]);
 
-  // --- MATH & LOGIC ---
-  const handleCellClick = (room: Room, date: Date) => {
-    setSelectedSlot({ room, date });
-    setCheckoutDate(addDays(date, 1)); // Default to 1 night
-    setGuests(2); 
-    setOverridePrice(null);
+  const displayRooms = isSortedNum ? [...rooms].sort((a, b) => parseInt(a.roomNumber) - parseInt(b.roomNumber)) : rooms;
+
+  // FIXED: No longer 'any', properly typed!
+  const handleSaveBooking = async (payload: BookingPayload, existingId?: number) => {
+    try {
+      if (existingId) {
+        const res = await axios.put(`/api/bookings/${existingId}`, payload);
+        setBookings(prev => prev.map(b => b.id === res.data.id ? res.data : b));
+      } else {
+        const res = await axios.post('/api/bookings', payload);
+        setBookings(prev => [...prev, res.data]);
+      }
+      setSelectedSlot(null);
+    } catch (error) { console.error(error); alert("Грешка при запазване!"); }
   };
 
-  let autoPrice = 0;
-  let calculatedNights = 0;
+  const handleDeleteBooking = async (id: number) => {
+    if (!window.confirm("Сигурни ли сте, че искате да изтриете тази резервация?")) return;
+    try {
+      await axios.delete(`/api/bookings/${id}`);
+      setBookings(prev => prev.filter(b => b.id !== id));
+      setSelectedSlot(null);
+    } catch (error) { console.error(error); alert("Грешка при изтриване!"); }
+  };
 
-  if (selectedSlot && checkoutDate) {
-    const checkin = selectedSlot.date;
-    const checkout = checkoutDate;
-    
-    if (checkout > checkin) {
-      calculatedNights = differenceInCalendarDays(checkout, checkin);
-      
-      // Safety check in case the database has a ghost room with no category!
-      if (selectedSlot.room.category) {
-        const cat = selectedSlot.room.category;
-        const ratePerNight = calculatedNights >= 3 ? cat.discountPrice : cat.basePrice;
-        autoPrice = ratePerNight * calculatedNights;
-
-        if (guests > 2) {
-          const extraPeople = guests - 2;
-          autoPrice += (extraPeople * 30 * calculatedNights);
-        }
-      }
-    }
-  }
-
-  const displayPrice = overridePrice !== null ? overridePrice : autoPrice.toFixed(2);
-  const displayRooms = isSortedNum ? [...rooms].sort((a, b) => parseInt(a.roomNumber) - parseInt(b.roomNumber)) : rooms;
+  const handleSaveDailyNote = async () => {
+    if (!summaryDate) return;
+    const payload = { date: format(summaryDate, 'yyyy-MM-dd'), text: dailyNoteText };
+    try {
+      const res = await axios.post('/api/notes', payload);
+      setDailyNotes(prev => {
+        const exists = prev.find(n => n.date === res.data.date);
+        return exists ? prev.map(n => n.date === res.data.date ? res.data : n) : [...prev, res.data];
+      });
+      setSummaryDate(null);
+    } catch (error) { console.error(error); alert("Грешка при запазване на бележката!"); }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 p-6 font-sans text-slate-800 overflow-hidden relative">
-      
-      {/* HEADER */}
       <div className="mb-4 flex items-baseline justify-between shrink-0">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">График на стаите</h1>
-          <p className="text-slate-500">Управление на резервациите</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentWeekStart(prev => subWeeks(prev, 1))} className="p-2 bg-white rounded shadow-sm border border-slate-200 hover:bg-slate-100">&larr;</button>
           <div className="text-2xl font-semibold text-indigo-600 capitalize min-w-[300px] text-center whitespace-nowrap">
             {displayMonth}
           </div>
-          <button onClick={() => setCurrentWeekStart(prev => addWeeks(prev, 1))} className="p-2 bg-white rounded shadow-sm border border-slate-200 hover:bg-slate-100">&rarr;</button>
+  
+        {/* Unified Pill-Button Group with Scroll Ref */}
+        <div 
+          ref={pillRef} 
+          className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+        >
+          <button 
+            onClick={() => setCurrentWeekStart(prev => subWeeks(prev, 1))} 
+            className="p-1.5 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors"
+            title="Предишна седмица"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+          </button>
+          
+          <div className="w-px bg-slate-200 self-stretch my-1 mx-1" />
+          
+          <button 
+            onClick={() => setCurrentWeekStart(prev => addWeeks(prev, 1))} 
+            className="p-1.5 text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-md transition-colors"
+            title="Следваща седмица"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
       </div>
-
-      {/* TABLE */}
+      </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 min-h-0 overflow-auto relative">
         <table className="w-full text-sm text-left border-collapse">
-          <thead ref={headerRef} className="text-slate-600">
+          <thead className="text-slate-600">
             <tr>
               <th className="p-3 border-r border-b border-slate-300 font-semibold w-48 sticky top-0 left-0 z-50 bg-slate-200 align-middle shadow-[1px_1px_0_#cbd5e1]">
-                <button 
-                  onClick={() => setIsSortedNum(!isSortedNum)}
-                  className={`flex items-center gap-2 w-full px-2 py-1.5 rounded transition-colors border text-xs ${isSortedNum ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-                  </svg>
+                <button onClick={() => setIsSortedNum(!isSortedNum)} className="flex items-center gap-2 w-full px-2 py-1.5 rounded bg-white border border-slate-200">
                   <span>{isSortedNum ? '102 -> 217' : 'По подразбиране'}</span>
                 </button>
               </th>
-              
               {weekDays.map((date, index) => {
                 const isCurrentDay = isToday(date);
+                const isHovered = hoveredDateStr === format(date, 'yyyy-MM-dd');
                 return (
-                  <th key={index} className={`p-2 border-r border-b border-slate-200 text-center min-w-[120px] sticky top-0 z-40 bg-slate-100 transition-colors cursor-ew-resize shadow-[0_1px_0_#e2e8f0] ${isCurrentDay ? 'text-indigo-700 shadow-[inset_0_-3px_0_#4f46e5]' : ''}`}>
+                  <th key={index} className={`p-2 border-r border-b border-slate-200 text-center min-w-[140px] sticky top-0 z-40 bg-slate-100 shadow-[0_1px_0_#e2e8f0] transition-colors ${isCurrentDay ? 'text-indigo-700 shadow-[inset_0_-3px_0_#4f46e5]' : ''} ${isHovered ? 'bg-slate-200' : ''}`}>
                     <div className="text-xs uppercase tracking-wider font-bold">{format(date, 'EEEEE', { locale: bg })}</div>
                     <div className={`text-xl ${isCurrentDay ? 'font-black' : 'text-slate-900'}`}>{format(date, 'd', { locale: bg })}</div>
                   </th>
@@ -164,128 +163,130 @@ export default function App() {
                   <div className="font-bold text-slate-900 text-base">{room.roomNumber}</div>
                   <div className="text-xs text-slate-500 uppercase tracking-wide">{room.category?.name}</div>
                 </td>
+                
                 {weekDays.map((date, index) => {
-                  const isCurrentDay = isToday(date);
+                  const dateStr = format(date, 'yyyy-MM-dd');
+                  const isHovered = hoveredDateStr === dateStr;
+                  const booking = bookings.find(b => b.room.id === room.id && date >= parseISO(b.startDate) && date < parseISO(b.endDate));
+
+                  if (booking) {
+                    const isLastDay = isSameDay(date, subDays(parseISO(booking.endDate), 1));
+                    const isFirstVisibleDay = isSameDay(date, parseISO(booking.startDate)) || index === 0;
+                    const totalNights = differenceInCalendarDays(parseISO(booking.endDate), parseISO(booking.startDate));
+                    const pricePerNight = (booking.price / totalNights).toFixed(0);
+                    const hasNotes = booking.notes && booking.notes.trim().length > 0;
+                    
+                    const bgColorClass = booking.isPaid ? 'bg-purple-600' : 'bg-orange-500';
+                    const borderColorClass = booking.isPaid ? 'border-purple-600' : 'border-orange-500';
+
+                    return (
+                      <td 
+                        key={index} 
+                        onClick={() => setSelectedSlot({ room, date, existingBooking: booking })} 
+                        onMouseEnter={() => setHoveredDateStr(dateStr)}
+                        onMouseLeave={() => setHoveredDateStr(null)}
+                        className={`p-0 relative cursor-pointer hover:brightness-95 transition-all h-14 z-0 text-white ${bgColorClass} ${isLastDay ? 'border-r border-slate-200' : `border-r ${borderColorClass}`}`}
+                      >
+                        {isFirstVisibleDay && (
+                          <div className="absolute inset-0 flex flex-col justify-center px-3 overflow-visible whitespace-nowrap z-10 pointer-events-none">
+                            <div className="text-sm font-bold truncate drop-shadow-sm flex items-center gap-1.5">
+                              {booking.displayName || 'Резервация'}
+                              {hasNotes && <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white/80 drop-shadow-sm" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" /></svg>}
+                            </div>
+                            <div className="text-[10px] text-white/90 font-medium">
+                              {booking.guestsCount} гости • {pricePerNight}€/н
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                    );
+                  }
+
                   return (
                     <td 
                       key={index} 
-                      className={`p-0 border-r border-slate-100 relative cursor-pointer hover:bg-indigo-100 transition-colors h-14 z-0 ${isCurrentDay ? 'bg-indigo-50/30' : ''}`}
-                      onClick={() => handleCellClick(room, date)}
-                    >
-                    </td>
-                  )
+                      onMouseEnter={() => setHoveredDateStr(dateStr)}
+                      onMouseLeave={() => setHoveredDateStr(null)}
+                      className={`p-0 border-r border-slate-100 relative cursor-pointer transition-colors h-14 z-0 ${isHovered ? 'bg-indigo-50' : ''} ${isToday(date) ? 'bg-indigo-50/30' : ''}`} 
+                      onClick={() => setSelectedSlot({ room, date })}
+                    ></td>
+                  );
                 })}
               </tr>
             ))}
           </tbody>
+
+          <tfoot className="sticky bottom-0 z-30 bg-slate-100 shadow-[0_-1px_0_#cbd5e1]">
+            <tr>
+              <td className="p-3 border-r border-slate-200 font-bold text-slate-700 sticky left-0 z-40 bg-slate-100 shadow-[1px_0_0_#cbd5e1]">
+                Общо за деня
+              </td>
+              {weekDays.map((date, index) => {
+                const dateStr = format(date, 'yyyy-MM-dd');
+                const isHovered = hoveredDateStr === dateStr;
+                const hasNote = dailyNotes.some(n => n.date === dateStr && n.text.trim().length > 0);
+                
+                let totalGuests = 0;
+                let totalRevenue = 0;
+                bookings.forEach(b => {
+                  if (date >= parseISO(b.startDate) && date < parseISO(b.endDate)) {
+                    totalGuests += b.guestsCount;
+                    const nights = differenceInCalendarDays(parseISO(b.endDate), parseISO(b.startDate));
+                    totalRevenue += (b.price / nights);
+                  }
+                });
+
+                return (
+                  <td 
+                    key={index} 
+                    onClick={() => {
+                      setSummaryDate(date);
+                      const existingNote = dailyNotes.find(n => n.date === dateStr);
+                      setDailyNoteText(existingNote ? existingNote.text : '');
+                    }}
+                    onMouseEnter={() => setHoveredDateStr(dateStr)}
+                    onMouseLeave={() => setHoveredDateStr(null)}
+                    className={`p-2 border-r border-slate-200 text-center cursor-pointer transition-all ${isHovered ? 'bg-indigo-100 text-indigo-800 shadow-inner' : 'text-slate-600'}`}
+                  >
+                    <div className="text-xs font-bold">{totalGuests} гости</div>
+                    <div className="text-[10px] font-semibold text-emerald-600">+{totalRevenue.toFixed(0)}€</div>
+                    {hasNote && <div className="mx-auto mt-1 w-1.5 h-1.5 bg-amber-500 rounded-full"></div>}
+                  </td>
+                );
+              })}
+            </tr>
+          </tfoot>
         </table>
       </div>
 
-      {/* DRAWER */}
-      {selectedSlot && (
-        <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[60] transition-opacity" onClick={() => setSelectedSlot(null)} />
+      <BookingDrawer 
+        isOpen={!!selectedSlot}
+        slot={selectedSlot}
+        bookings={bookings}
+        onClose={() => setSelectedSlot(null)}
+        onSave={handleSaveBooking}
+        onDelete={handleDeleteBooking}
+      />
+
+      {summaryDate && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[80] flex items-center justify-center transition-opacity" onClick={(e) => { if (e.target === e.currentTarget) setSummaryDate(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-[400px] overflow-hidden transform scale-100">
+            <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+              <h2 className="text-xl font-bold text-slate-900">Бележки за деня</h2>
+              <button onClick={() => setSummaryDate(null)} className="text-slate-400 hover:text-slate-700 hover:bg-slate-200 p-1 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            <div className="p-6">
+              <div className="text-center mb-6">
+                <div className="text-sm font-bold text-indigo-600 uppercase tracking-widest mb-1">{format(summaryDate, 'EEEE', { locale: bg })}</div>
+                <div className="text-3xl font-black text-slate-900">{format(summaryDate, 'dd MMMM yyyy', { locale: bg })}</div>
+              </div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Дневни бележки и задачи</label>
+              <textarea rows={5} value={dailyNoteText} onChange={(e) => setDailyNoteText(e.target.value)} placeholder="напр. Ремонт в стая 105..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mb-4"></textarea>
+              <button onClick={handleSaveDailyNote} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-md">Запази бележката</button>
+            </div>
+          </div>
+        </div>
       )}
-
-      <div className={`fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-[70] transform transition-transform duration-300 ease-in-out ${selectedSlot ? 'translate-x-0' : 'translate-x-full'} flex flex-col`}>
-        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Нова Резервация</h2>
-            <p className="text-sm text-slate-500">
-              Стая <span className="font-bold text-indigo-600">{selectedSlot?.room.roomNumber}</span> ({selectedSlot?.room.category?.name})
-            </p>
-          </div>
-          <button onClick={() => setSelectedSlot(null)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-
-        <div className="p-6 flex-1 overflow-y-auto space-y-6">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Настаняване</label>
-              <div className="w-full px-3 bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-medium h-[48px] flex items-center">
-                {selectedSlot ? format(selectedSlot.date, 'dd.MM.yyyy', { locale: bg }) : ''}
-              </div>
-              <div className="mt-1 text-xs font-semibold text-indigo-600 capitalize">
-                {selectedSlot ? format(selectedSlot.date, 'EEEE', { locale: bg }) : ''}
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center justify-center pt-5 px-1 text-slate-400">
-              <div className={`text-sm font-bold px-3 py-1 rounded-full whitespace-nowrap mb-1 transition-colors ${calculatedNights > 0 ? 'bg-indigo-100 text-indigo-700 shadow-sm' : 'bg-slate-100 text-slate-400'}`}>
-                {calculatedNights > 0 ? `${calculatedNights} нощувк${calculatedNights === 1 ? 'а' : 'и'}` : '-'}
-              </div>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-            </div>
-
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Напускане</label>
-              <DatePicker
-                selected={checkoutDate}
-                onChange={(date: Date | null) => { setCheckoutDate(date); setOverridePrice(null); }}
-                dateFormat="dd/MM/yyyy"
-                minDate={selectedSlot ? addDays(selectedSlot.date, 1) : new Date()} 
-                className="w-full px-3 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all h-[48px]"
-                popperPlacement="bottom-end" 
-
-                renderDayContents={(day: number, date?: Date) => {
-                  let tooltip = "";
-                  if (selectedSlot && date && date > selectedSlot.date) {
-                    const n = differenceInCalendarDays(date, selectedSlot.date);
-                    tooltip = `${n} нощувк${n === 1 ? 'а' : 'и'}`;
-                  }
-                  return <div title={tooltip}>{day}</div>;
-                }}
-              />
-              <div className="mt-1 text-xs font-semibold text-indigo-600 capitalize">
-                {checkoutDate ? format(checkoutDate, 'EEEE', { locale: bg }) : 'Изберете дата'}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Име (или група)</label>
-            <input type="text" placeholder="напр. Даниела и Митко" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" />
-          </div>
-
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Брой гости</label>
-              <input 
-                type="number" min="1" value={guests}
-                onChange={(e) => { setGuests(parseInt(e.target.value) || 1); setOverridePrice(null); }}
-                className="w-full px-3 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all h-[48px]" 
-              />
-              <div className="mt-1 text-[10px] text-slate-400">Над 2 души: +30€/вечер</div>
-            </div>
-            
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Общо (EUR)</label>
-              <div className="relative flex items-center">
-                <input 
-                  type="number" step="0.01" value={displayPrice}
-                  onChange={(e) => setOverridePrice(e.target.value)} 
-                  className="w-full px-3 pr-8 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all h-[48px]" 
-                />
-                <span className="absolute right-4 text-slate-400 font-bold pointer-events-none">€</span>
-              </div>
-              <div className="mt-1 text-xs font-semibold text-emerald-600">
-                ≈ {(parseFloat(displayPrice || '0') * 1.95583).toFixed(2)} лв.
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Бележки / Статус</label>
-            <textarea rows={3} placeholder="напр. Платено, или проблем с климатика..." className="w-full p-3 bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"></textarea>
-          </div>
-        </div>
-
-        <div className="p-6 border-t border-slate-200 bg-slate-50 flex gap-3">
-          <button onClick={() => setSelectedSlot(null)} className="flex-1 px-4 py-3 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 transition-colors">Отказ</button>
-          <button className="flex-1 px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors">Запази</button>
-        </div>
-      </div>
     </div>
   );
 }
