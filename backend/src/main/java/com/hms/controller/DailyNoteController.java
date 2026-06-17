@@ -16,7 +16,7 @@ import com.hms.repository.DailyNoteRepository;
 
 @RestController
 @RequestMapping("/api/notes")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "*")
 public class DailyNoteController {
 
     @Autowired

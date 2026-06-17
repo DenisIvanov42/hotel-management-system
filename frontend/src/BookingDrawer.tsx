@@ -3,7 +3,7 @@ import { bg } from 'date-fns/locale';
 import { useState } from 'react';
 import DatePicker from 'react-datepicker';
 
-// 🚨 THE FIX: This is required for the calendar UI and popper to work!
+// Required for the calendar UI and popper to work
 import 'react-datepicker/dist/react-datepicker.css';
 
 import type { Booking, BookingPayload, SelectedSlot } from './types';
@@ -23,11 +23,12 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
   const [checkoutDate, setCheckoutDate] = useState<Date | null>(null);
   const [guests, setGuests] = useState<number>(2);
   const [overridePrice, setOverridePrice] = useState<string | null>(null);
-  const [discount, setDiscount] = useState<number>(0);
+  const [discount, setDiscount] = useState<number | string>(0);
   const [displayName, setDisplayName] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
   const [isPaid, setIsPaid] = useState(false);
 
+  // Reset state when a new slot is clicked
   if (slot !== prevSlot) {
     setPrevSlot(slot);
     if (slot) {
@@ -53,26 +54,56 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
 
   const actualCheckinDate = slot?.existingBooking ? parseISO(slot.existingBooking.startDate) : slot?.date;
 
+  // 1. Calculate Base Total (Before Discounts)
+  let baseTotal = 0;
   let autoPrice = 0;
   let calculatedNights = 0;
-  let discountAmountInEur = 0;
 
   if (actualCheckinDate && checkoutDate && checkoutDate > actualCheckinDate) {
     calculatedNights = differenceInCalendarDays(checkoutDate, actualCheckinDate);
     if (slot?.room.category) {
       const cat = slot.room.category;
       const ratePerNight = calculatedNights >= 3 ? cat.discountPrice : cat.basePrice;
-      let baseTotal = ratePerNight * calculatedNights;
+      baseTotal = ratePerNight * calculatedNights;
       if (guests > 2) baseTotal += ((guests - 2) * 30 * calculatedNights);
       
-      discountAmountInEur = baseTotal * ((discount || 0) / 100);
+      const parsedDiscount = typeof discount === 'string' ? parseFloat(discount) || 0 : discount;
+      const discountAmountInEur = baseTotal * (parsedDiscount / 100);
       autoPrice = Math.max(0, baseTotal - discountAmountInEur);
     }
   }
 
+  // Final display values
   const displayPrice = overridePrice !== null ? overridePrice : autoPrice.toFixed(2);
+  const actualDiscountAmountEur = baseTotal > 0 ? Math.max(0, baseTotal - parseFloat(displayPrice || '0')) : 0;
 
-  // Helper to cross out dates in the middle
+  // 2. Two-Way Binding Handlers
+  const handleDiscountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valStr = e.target.value;
+    setDiscount(valStr); // Keep string in state so user can type "12."
+    const valNum = parseFloat(valStr);
+    
+    if (!isNaN(valNum) && baseTotal > 0) {
+      const newPrice = baseTotal - (baseTotal * (valNum / 100));
+      setOverridePrice(newPrice.toFixed(2));
+    } else if (valStr === '') {
+      setOverridePrice(null); // Fall back to autoPrice if discount is cleared
+    }
+  };
+
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valStr = e.target.value;
+    setOverridePrice(valStr);
+    const valNum = parseFloat(valStr);
+    
+    if (!isNaN(valNum) && baseTotal > 0) {
+      const newDiscount = ((baseTotal - valNum) / baseTotal) * 100;
+      setDiscount(parseFloat(newDiscount.toFixed(2))); // Auto-calculate discount %
+    } else if (valStr === '') {
+      setDiscount(0);
+    }
+  };
+
   const getExcludedDates = () => {
     if (!slot) return [];
     const dates: Date[] = [];
@@ -85,22 +116,19 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
     return dates;
   };
 
-  // 🛡️ NEW: Find the closest FUTURE booking so we can lock the max checkout date
   const getMaxCheckoutDate = () => {
     if (!slot || !actualCheckinDate) return undefined;
-    
     const futureBookings = bookings
       .filter(b => b.room.id === slot.room.id && b.id !== slot.existingBooking?.id)
       .map(b => parseISO(b.startDate))
       .filter(date => date >= actualCheckinDate)
-      .sort((a, b) => a.getTime() - b.getTime()); // Sort by closest date
-
-    // User can checkout AT MOST on the day the next person checks in
+      .sort((a, b) => a.getTime() - b.getTime());
     return futureBookings.length > 0 ? futureBookings[0] : undefined;
   };
 
   const handleSave = () => {
     if (!slot || !checkoutDate || !actualCheckinDate) return;
+    const finalDiscount = typeof discount === 'string' ? parseFloat(discount) || 0 : discount;
     const payload: BookingPayload = {
       room: slot.room,
       startDate: format(actualCheckinDate, 'yyyy-MM-dd'),
@@ -108,7 +136,7 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
       displayName: displayName || 'Резервация',
       guestsCount: guests,
       price: parseFloat(displayPrice) || 0,
-      discount: discount || 0,
+      discount: finalDiscount,
       notes: bookingNotes || '',
       isPaid: isPaid
     };
@@ -148,13 +176,12 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
 
             <div className="flex-1">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Напускане</label>
-              {/* DatePicker is here */}
               <DatePicker
                 selected={checkoutDate}
                 onChange={(date: Date | null) => { setCheckoutDate(date); setOverridePrice(null); }}
                 dateFormat="dd/MM/yyyy"
                 minDate={actualCheckinDate ? addDays(actualCheckinDate, 1) : new Date()} 
-                maxDate={getMaxCheckoutDate()} // 🛡️ Added the max date limit here!
+                maxDate={getMaxCheckoutDate()}
                 excludeDates={getExcludedDates()}
                 popperPlacement="bottom-end"
                 className="w-full px-3 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium h-[48px] focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
@@ -187,18 +214,18 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
             <div className="flex-1">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Отстъпка (%)</label>
               <div className="relative flex items-center">
-                <input type="number" step="5" min="0" max="100" value={discount} onChange={(e) => { setDiscount(parseFloat(e.target.value) || 0); setOverridePrice(null); }} className="w-full px-3 pr-8 bg-white border border-slate-300 rounded-lg font-bold h-[48px] text-orange-600 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input type="number" step="5" min="0" max="100" value={discount} onChange={handleDiscountChange} className="w-full px-3 pr-8 bg-white border border-slate-300 rounded-lg font-bold h-[48px] text-orange-600 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <span className="absolute right-4 text-slate-400 font-bold pointer-events-none">%</span>
               </div>
               <div className="mt-1 text-xs font-semibold text-orange-500">
-                - {discountAmountInEur.toFixed(2)} €
+                - {actualDiscountAmountEur.toFixed(2)} €
               </div>
             </div>
             
             <div className="flex-1">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Общо (EUR)</label>
               <div className="relative flex items-center">
-                <input type="number" step="5" value={displayPrice} onChange={(e) => setOverridePrice(e.target.value)} className="w-full px-3 pr-8 bg-white border border-slate-300 rounded-lg font-bold h-[48px] focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input type="number" step="5" value={displayPrice} onChange={handlePriceChange} className="w-full px-3 pr-8 bg-white border border-slate-300 rounded-lg font-bold h-[48px] focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <span className="absolute right-4 text-slate-400 font-bold pointer-events-none">€</span>
               </div>
               <div className="mt-1 text-xs font-semibold text-emerald-600">

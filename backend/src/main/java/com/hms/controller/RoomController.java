@@ -15,7 +15,7 @@ import com.hms.repository.RoomRepository;
 
 @RestController
 @RequestMapping("/api/rooms")
-@CrossOrigin(origins = "http://localhost:5173") 
+@CrossOrigin(origins = "*") 
 public class RoomController {
 
     @Autowired

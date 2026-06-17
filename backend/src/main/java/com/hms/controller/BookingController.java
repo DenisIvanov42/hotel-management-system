@@ -18,7 +18,7 @@ import com.hms.repository.BookingRepository;
 
 @RestController
 @RequestMapping("/api/bookings")
-@CrossOrigin(origins = "http://localhost:5173") // Allow React to talk to this endpoint
+@CrossOrigin(origins = "*") 
 public class BookingController {
 
     @Autowired
