@@ -24,10 +24,16 @@ public class Room {
     @JoinColumn(name = "category_id")
     private Category category;
 
+    @Column(columnDefinition = "TEXT")
+    private String notes;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getRoomNumber() { return roomNumber; }
     public void setRoomNumber(String roomNumber) { this.roomNumber = roomNumber; }
     public Category getCategory() { return category; }
     public void setCategory(Category category) { this.category = category; }
+    public String getNotes() {return notes;}
+    public void setNotes(String notes) {this.notes = notes;}
+
 }

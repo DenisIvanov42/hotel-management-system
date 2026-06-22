@@ -9,6 +9,7 @@ export interface Room {
   id: number;
   roomNumber: string;
   category: Category;
+  notes?: string; 
 }
 
 export interface Booking {
