@@ -18,12 +18,13 @@ export default function App() {
   const [summaryDate, setSummaryDate] = useState<Date | null>(null);
   const [dailyNoteText, setDailyNoteText] = useState('');
 
-  // NEW: State for editing Room Peculiarities
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [roomNoteText, setRoomNoteText] = useState('');
 
   const isScrolling = useRef(false);
   const pillRef = useRef<HTMLDivElement>(null);
+
+  const [hoveredBookingId, setHoveredBookingId] = useState<number | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -129,7 +130,7 @@ export default function App() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 min-h-0 overflow-auto relative">
-        <table className="w-full text-sm text-left border-collapse">
+        <table className="w-full text-sm text-left border-separate border-spacing-0">
           <thead className="text-slate-600">
             <tr>
               <th className="p-3 border-r border-b border-slate-300 font-semibold w-56 sticky top-0 left-0 z-50 bg-slate-200 align-middle shadow-[1px_1px_0_#cbd5e1]">
@@ -152,8 +153,8 @@ export default function App() {
 
           <tbody>
             {displayRooms.map((room) => (
-              <tr key={room.id} className="border-b border-slate-100 hover:bg-indigo-50 transition-colors group">
-                <td className="px-4 py-2 border-r border-slate-200 sticky left-0 z-20 bg-white group-hover:bg-indigo-50 shadow-[1px_0_0_#e2e8f0] transition-colors">
+              <tr key={room.id} className="border-b hover:bg-indigo-50 transition-colors group">
+                <td className="px-4 py-2 border-r border-b border-slate-200 sticky left-0 z-20 bg-white group-hover:bg-indigo-50 shadow-[1px_0_0_#e2e8f0] transition-colors">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-bold text-slate-900 text-base">{room.roomNumber}</div>
@@ -185,21 +186,22 @@ export default function App() {
                     const hasNotes = booking.notes && booking.notes.trim().length > 0;
                     
                     const bgColorClass = booking.isPaid ? 'bg-purple-600' : 'bg-orange-500';
-                    const borderColorClass = booking.isPaid ? 'border-purple-600' : 'border-orange-500';
+                    const bottomBorderColorClass = booking.isPaid ? 'border-b-purple-600' : 'border-b-orange-500';
+                    const isThisHovered = hoveredBookingId === booking.id;
 
                     return (
                       <td 
                         key={index} 
                         onClick={() => setSelectedSlot({ room, date, existingBooking: booking })} 
-                        onMouseEnter={() => setHoveredDateStr(dateStr)}
-                        onMouseLeave={() => setHoveredDateStr(null)}
-                        className={`p-0 relative cursor-pointer hover:brightness-90 transition-all h-14 z-0 text-white ${bgColorClass} ${isLastDay ? 'border-r border-slate-200' : `border-r ${borderColorClass}`}`}
+                        onMouseEnter={() => { setHoveredDateStr(dateStr); setHoveredBookingId(booking.id); }}
+                        onMouseLeave={() => { setHoveredDateStr(null); setHoveredBookingId(null); }}
+                        className={`p-0 relative cursor-pointer transition-all h-14 z-0 text-white ${bgColorClass} border-b ${bottomBorderColorClass} ${isLastDay ? 'border-r border-r-slate-200' : 'border-r-0'} ${isThisHovered ? 'brightness-90 shadow-inner' : ''}`}
                       >
                         {isFirstVisibleDay && (
                           <div className="absolute inset-0 flex flex-col justify-center px-3 overflow-visible whitespace-nowrap z-10 pointer-events-none">
                             <div className="text-sm font-bold truncate drop-shadow-sm flex items-center gap-1.5">
                               {booking.displayName || 'Резервация'}
-                              {hasNotes && <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white/80 drop-shadow-sm" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" /></svg>}
+                              {hasNotes && <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white/80 drop-shadow-sm" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 110-2H7z" clipRule="evenodd" /></svg>}
                             </div>
                             <div className="text-[10px] text-white/90 font-medium">
                               {booking.guestsCount} гости • {pricePerNight}€/н
@@ -215,7 +217,7 @@ export default function App() {
                       key={index} 
                       onMouseEnter={() => setHoveredDateStr(dateStr)}
                       onMouseLeave={() => setHoveredDateStr(null)}
-                      className={`p-0 border-r border-slate-100 relative cursor-pointer transition-colors h-14 z-0 ${isHovered ? 'bg-indigo-100/60' : ''} ${isToday(date) && !isHovered ? 'bg-slate-100' : ''} hover:!bg-indigo-300 hover:shadow-inner`} 
+                      className={`p-0 border-r border-b border-slate-100 relative cursor-pointer transition-colors h-14 z-0 ${isHovered ? 'bg-indigo-100/60' : ''} ${isToday(date) && !isHovered ? 'bg-slate-100' : ''} hover:!bg-indigo-300 hover:shadow-inner`} 
                       onClick={() => setSelectedSlot({ room, date })}
                     ></td>
                   );
@@ -235,7 +237,7 @@ export default function App() {
                 bookings.forEach(b => { if (date >= parseISO(b.startDate) && date < parseISO(b.endDate)) totalGuests += b.guestsCount; });
 
                 return (
-                  <td key={index} onClick={() => { setSummaryDate(date); const existingNote = dailyNotes.find(n => n.date === dateStr); setDailyNoteText(existingNote ? existingNote.text : ''); }} onMouseEnter={() => setHoveredDateStr(dateStr)} onMouseLeave={() => setHoveredDateStr(null)} className={`p-2 border-r border-slate-200 text-center cursor-pointer transition-all ${isHovered ? 'bg-indigo-100 text-indigo-900 shadow-inner' : 'text-slate-600'}`}>
+                  <td key={index} onClick={() => { setSummaryDate(date); const existingNote = dailyNotes.find(n => n.date === dateStr); setDailyNoteText(existingNote ? existingNote.text : ''); }} onMouseEnter={() => setHoveredDateStr(dateStr)} onMouseLeave={() => setHoveredDateStr(null)} className={`p-2 border-r border-slate-200 text-center cursor-pointer transition-all ${isHovered ? 'bg-indigo-100 text-indigo-900 shadow-inner' : 'bg-slate-100 text-slate-600'}`}>
                     <div className="text-sm font-bold">{totalGuests} гости</div>
                     {hasNote ? <div className="mx-auto mt-1.5 w-2 h-2 bg-amber-500 rounded-full shadow-sm"></div> : <div className="h-3.5"></div>}
                   </td>
