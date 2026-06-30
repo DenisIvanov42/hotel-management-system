@@ -22,7 +22,7 @@ export interface Booking {
   price: number;
   discount: number; 
   notes: string;
-  isPaid: boolean;
+  color: string;
 }
 
 export interface DailyNote {

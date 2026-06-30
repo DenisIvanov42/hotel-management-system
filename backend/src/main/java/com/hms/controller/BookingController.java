@@ -51,7 +51,6 @@ public class BookingController {
         booking.setPrice(bookingDetails.getPrice());
         booking.setDiscount(bookingDetails.getDiscount());
         booking.setNotes(bookingDetails.getNotes());
-        booking.setIsPaid(bookingDetails.getIsPaid());
         
         // Save and return it
         return bookingRepository.save(booking);

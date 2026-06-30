@@ -2,8 +2,6 @@ import { addDays, differenceInCalendarDays, eachDayOfInterval, format, isSameDay
 import { bg } from 'date-fns/locale';
 import { useState } from 'react';
 import DatePicker from 'react-datepicker';
-
-// Required for the calendar UI and popper to work
 import 'react-datepicker/dist/react-datepicker.css';
 
 import type { Booking, BookingPayload, SelectedSlot } from './types';
@@ -17,6 +15,17 @@ interface BookingDrawerProps {
   onDelete: (id: number) => void;
 }
 
+// 🎨 Our predefined Excel-like color palette
+const PALETTE = [
+  { id: 'slate', bg: 'bg-slate-500', ring: 'ring-slate-500' },
+  { id: 'orange', bg: 'bg-orange-500', ring: 'ring-orange-500' },
+  { id: 'blue', bg: 'bg-blue-500', ring: 'ring-blue-500' },
+  { id: 'emerald', bg: 'bg-emerald-500', ring: 'ring-emerald-500' },
+  { id: 'rose', bg: 'bg-rose-500', ring: 'ring-rose-500' },
+  { id: 'cyan', bg: 'bg-cyan-500', ring: 'ring-cyan-500' },
+  { id: 'purple', bg: 'bg-purple-500', ring: 'ring-purple-500' },
+];
+
 export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave, onDelete }: BookingDrawerProps) {
   const [prevSlot, setPrevSlot] = useState<SelectedSlot | null>(slot);
   
@@ -26,9 +35,8 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
   const [discount, setDiscount] = useState<number | string>(0);
   const [displayName, setDisplayName] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
-  const [isPaid, setIsPaid] = useState(false);
+  const [selectedColor, setSelectedColor] = useState<string>('slate'); // Default color
 
-  // Reset state when a new slot is clicked
   if (slot !== prevSlot) {
     setPrevSlot(slot);
     if (slot) {
@@ -39,7 +47,7 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
         setOverridePrice(slot.existingBooking.price.toFixed(2));
         setDisplayName(slot.existingBooking.displayName);
         setBookingNotes(slot.existingBooking.notes);
-        setIsPaid(slot.existingBooking.isPaid);
+        setSelectedColor(slot.existingBooking.color || 'slate');
       } else {
         setCheckoutDate(addDays(slot.date, 1));
         setGuests(2);
@@ -47,14 +55,13 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
         setOverridePrice(null);
         setDisplayName('');
         setBookingNotes('');
-        setIsPaid(false);
+        setSelectedColor('slate');
       }
     }
   }
 
   const actualCheckinDate = slot?.existingBooking ? parseISO(slot.existingBooking.startDate) : slot?.date;
 
-  // 1. Calculate Base Total (Before Discounts)
   let baseTotal = 0;
   let autoPrice = 0;
   let calculatedNights = 0;
@@ -73,21 +80,18 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
     }
   }
 
-  // Final display values
   const displayPrice = overridePrice !== null ? overridePrice : autoPrice.toFixed(2);
   const actualDiscountAmountEur = baseTotal > 0 ? Math.max(0, baseTotal - parseFloat(displayPrice || '0')) : 0;
 
-  // 2. Two-Way Binding Handlers
   const handleDiscountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const valStr = e.target.value;
-    setDiscount(valStr); // Keep string in state so user can type "12."
+    setDiscount(valStr);
     const valNum = parseFloat(valStr);
-    
     if (!isNaN(valNum) && baseTotal > 0) {
       const newPrice = baseTotal - (baseTotal * (valNum / 100));
       setOverridePrice(newPrice.toFixed(2));
     } else if (valStr === '') {
-      setOverridePrice(null); // Fall back to autoPrice if discount is cleared
+      setOverridePrice(null); 
     }
   };
 
@@ -95,10 +99,9 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
     const valStr = e.target.value;
     setOverridePrice(valStr);
     const valNum = parseFloat(valStr);
-    
     if (!isNaN(valNum) && baseTotal > 0) {
       const newDiscount = ((baseTotal - valNum) / baseTotal) * 100;
-      setDiscount(parseFloat(newDiscount.toFixed(2))); // Auto-calculate discount %
+      setDiscount(parseFloat(newDiscount.toFixed(2))); 
     } else if (valStr === '') {
       setDiscount(0);
     }
@@ -138,7 +141,7 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
       price: parseFloat(displayPrice) || 0,
       discount: finalDiscount,
       notes: bookingNotes || '',
-      isPaid: isPaid
+      color: selectedColor // Pass the color to backend!
     };
     onSave(payload, slot.existingBooking?.id);
   };
@@ -158,7 +161,8 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
           </button>
         </div>
 
-        <div className="p-5 flex-1 overflow-y-auto space-y-4">
+        <div className="p-5 flex-1 overflow-y-auto space-y-5">
+          {/* Dates */}
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Настаняване</label>
@@ -234,9 +238,22 @@ export default function BookingDrawer({ isOpen, slot, bookings, onClose, onSave,
             </div>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-            <input type="checkbox" id="isPaid" checked={isPaid} onChange={(e) => setIsPaid(e.target.checked)} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer" />
-            <label htmlFor="isPaid" className="font-bold text-indigo-900 cursor-pointer select-none">Резервацията е платена</label>
+          {/* 🎨 NEW: The Color Picker Palette */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Цвят (Статус)</label>
+            <div className="flex gap-3 bg-slate-50 p-3 border border-slate-200 rounded-lg">
+              {PALETTE.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedColor(c.id)}
+                  className={`w-8 h-8 rounded-full ${c.bg} shadow-sm border border-black/10 transition-all ${
+                    selectedColor === c.id ? `ring-2 ring-offset-2 ${c.ring} scale-110` : 'hover:scale-110 hover:shadow-md'
+                  }`}
+                  title="Избери цвят"
+                  type="button"
+                />
+              ))}
+            </div>
           </div>
 
           <div>

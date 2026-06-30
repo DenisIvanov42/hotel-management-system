@@ -45,8 +45,9 @@ public class Booking {
     @Column(name = "notes", length = 1000)
     private String notes;
 
-    @Column(name = "is_paid", nullable = false)
-    private Boolean isPaid = false; // Default to unpaid
+    @Column(name = "color")
+    private String color = "orange";
+
 
 
     // --- GETTERS AND SETTERS ---
@@ -77,6 +78,7 @@ public class Booking {
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
 
-    public Boolean getIsPaid() { return isPaid; }
-    public void setIsPaid(Boolean isPaid) { this.isPaid = isPaid; }
+    public String getColor() { return color; }
+    public void setColor(String color) { this.color = color; }
+
 }

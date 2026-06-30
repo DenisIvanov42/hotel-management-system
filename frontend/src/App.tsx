@@ -185,9 +185,21 @@ export default function App() {
                     const pricePerNight = (booking.price / totalNights).toFixed(0);
                     const hasNotes = booking.notes && booking.notes.trim().length > 0;
                     
-                    const bgColorClass = booking.isPaid ? 'bg-purple-600' : 'bg-orange-500';
-                    const bottomBorderColorClass = booking.isPaid ? 'border-b-purple-600' : 'border-b-orange-500';
-                    const isThisHovered = hoveredBookingId === booking.id;
+                    // 🎨 Mapping the saved string to safe Tailwind classes
+                  const COLOR_MAP: Record<string, { bg: string, border: string }> = {
+                    slate: { bg: 'bg-slate-500', border: 'border-b-slate-600' },
+                    orange: { bg: 'bg-orange-500', border: 'border-b-orange-600' },
+                    blue: { bg: 'bg-blue-500', border: 'border-b-blue-600' },
+                    emerald: { bg: 'bg-emerald-500', border: 'border-b-emerald-600' },
+                    rose: { bg: 'bg-rose-500', border: 'border-b-rose-600' },
+                    cyan: { bg: 'bg-cyan-500', border: 'border-b-cyan-600' },
+                    purple: { bg: 'bg-purple-500', border: 'border-b-purple-600' },
+                  };
+
+                  const bookingColor = booking.color || 'slate'; // Fallback to orange if old booking has no color
+                  const bgColorClass = COLOR_MAP[bookingColor]?.bg || 'bg-orange-500';
+                  const bottomBorderColorClass = COLOR_MAP[bookingColor]?.border || 'border-b-orange-600';
+                  const isThisHovered = hoveredBookingId === booking.id;
 
                     return (
                       <td 
