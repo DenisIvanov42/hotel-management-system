@@ -3,7 +3,9 @@ import { addDays, addWeeks, differenceInCalendarDays, eachDayOfInterval, format,
 import { bg } from 'date-fns/locale';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import BookingDrawer from './BookingDrawer';
+import ProfitCalculator from './ProfitCalculator';
 import type { Booking, BookingPayload, DailyNote, Room, SelectedSlot } from './types';
+
 
 export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -107,7 +109,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 p-6 font-sans text-slate-800 overflow-hidden relative">
+    <div className="h-screen block bg-slate-50 p-6 font-sans text-slate-800 relative">
       <div className="mb-4 flex items-baseline justify-between shrink-0">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">График на стаите</h1>
@@ -129,7 +131,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 min-h-0 overflow-auto relative">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-[85vh] min-h-[600px] overflow-auto relative mb-50">
         <table className="w-full text-sm text-left border-separate border-spacing-0">
           <thead className="text-slate-600">
             <tr>
@@ -196,7 +198,7 @@ export default function App() {
                     purple: { bg: 'bg-purple-500', border: 'border-b-purple-600' },
                   };
 
-                  const bookingColor = booking.color || 'slate'; // Fallback to orange if old booking has no color
+                  const bookingColor = booking.color || 'slate'; // Fallback to slate if old booking has no color
                   const bgColorClass = COLOR_MAP[bookingColor]?.bg || 'bg-orange-500';
                   const bottomBorderColorClass = COLOR_MAP[bookingColor]?.border || 'border-b-orange-600';
                   const isThisHovered = hoveredBookingId === booking.id;
@@ -259,6 +261,11 @@ export default function App() {
           </tfoot>
         </table>
       </div>
+      
+      <div className="pb-12">
+        <ProfitCalculator rooms={rooms} bookings={bookings} />
+      </div>
+
 
       <BookingDrawer isOpen={!!selectedSlot} slot={selectedSlot} bookings={bookings} onClose={() => setSelectedSlot(null)} onSave={handleSaveBooking} onDelete={handleDeleteBooking} />
 
