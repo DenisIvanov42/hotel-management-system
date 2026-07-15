@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { addDays, addWeeks, differenceInCalendarDays, eachDayOfInterval, format, isSameDay, isToday, parseISO, startOfWeek, subDays, subWeeks } from 'date-fns';
+import { addDays, differenceInCalendarDays, eachDayOfInterval, format, isSameDay, isToday, parseISO, subDays } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import BookingDrawer from './BookingDrawer';
@@ -13,7 +13,10 @@ export default function App() {
   const [dailyNotes, setDailyNotes] = useState<DailyNote[]>([]);
   
   const [isSortedNum, setIsSortedNum] = useState(false);
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  
+  // 🚀 REPLACED: Start 2 days in the past instead of snapping to Monday
+  const [viewStartDate, setViewStartDate] = useState(() => subDays(new Date(), 2));
+  
   const [hoveredDateStr, setHoveredDateStr] = useState<string | null>(null);
 
   const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null);
@@ -40,18 +43,21 @@ export default function App() {
     }).catch(error => console.error("Error fetching data:", error));
   }, []);
 
-  const currentWeekEnd = addDays(currentWeekStart, 6);
-  const weekDays = eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd });
-  const startMonth = format(currentWeekStart, 'LLLL', { locale: bg });
-  const endMonth = format(currentWeekEnd, 'LLLL yyyy', { locale: bg });
-  const displayMonth = startMonth === format(currentWeekEnd, 'LLLL', { locale: bg }) ? endMonth : `${startMonth} - ${endMonth}`;
+  // 🚀 REPLACED: 14 days total view instead of 7 days
+  const viewEndDate = addDays(viewStartDate, 13);
+  const displayedDays = eachDayOfInterval({ start: viewStartDate, end: viewEndDate });
+  
+  const startMonth = format(viewStartDate, 'LLLL', { locale: bg });
+  const endMonth = format(viewEndDate, 'LLLL yyyy', { locale: bg });
+  const displayMonth = startMonth === format(viewEndDate, 'LLLL', { locale: bg }) ? endMonth : `${startMonth} - ${endMonth}`;
 
+  // 🚀 REPLACED: Scroll by 7 days to keep it fast, but using addDays/subDays
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     if (isScrolling.current) return;
     isScrolling.current = true;
-    if (e.deltaY > 0) setCurrentWeekStart(prev => addWeeks(prev, 1));
-    else if (e.deltaY < 0) setCurrentWeekStart(prev => subWeeks(prev, 1));
+    if (e.deltaY > 0) setViewStartDate(prev => addDays(prev, 7));
+    else if (e.deltaY < 0) setViewStartDate(prev => subDays(prev, 7));
     setTimeout(() => { isScrolling.current = false; }, 250);
   }, []);
 
@@ -98,7 +104,6 @@ export default function App() {
     } catch (error) { console.error(error); alert("Грешка при запазване на бележката!"); }
   };
 
-  // NEW: Save Room Peculiarity
   const handleSaveRoomNote = async () => {
     if (!editingRoom) return;
     try {
@@ -106,9 +111,7 @@ export default function App() {
       setRooms(prev => prev.map(r => r.id === res.data.id ? res.data : r));
       setEditingRoom(null);
     } catch (error) { console.error(error); alert("Грешка при запазване на бележката за стаята!"); }
-  };
-
-  return (
+  };  return (
     <div className="h-screen block bg-slate-50 p-6 font-sans text-slate-800 relative">
       <div className="mb-4 flex items-baseline justify-between shrink-0">
         <div>
@@ -119,12 +122,21 @@ export default function App() {
           <div className="text-2xl font-semibold text-indigo-600 capitalize min-w-[280px] text-right whitespace-nowrap">
             {displayMonth}
           </div>
-          <div ref={pillRef} className="inline-flex rounded-lg border border-slate-300 bg-white p-1 shadow-sm cursor-ns-resize" title="Скролирайте тук с мишката, за да сменяте седмиците">
-            <button onClick={() => setCurrentWeekStart(prev => subWeeks(prev, 1))} className="p-1.5 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 rounded-md transition-colors">
+          <div ref={pillRef} className="inline-flex rounded-lg border border-slate-300 bg-white p-1 shadow-sm cursor-ns-resize" title="Скролирайте тук с мишката, за да сменяте датите">
+            <button onClick={() => setViewStartDate(prev => subDays(prev, 7))} className="p-1.5 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 rounded-md transition-colors" title="Предишни 7 дни">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
             </button>
+            
             <div className="w-px bg-slate-200 self-stretch my-1 mx-1" />
-            <button onClick={() => setCurrentWeekStart(prev => addWeeks(prev, 1))} className="p-1.5 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 rounded-md transition-colors">
+            
+            {/* The "Jump to Today" button */}
+            <button onClick={() => setViewStartDate(subDays(new Date(), 2))} className="px-3 text-xs font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-100 hover:text-indigo-600 rounded-md transition-colors">
+              днес
+            </button>
+
+            <div className="w-px bg-slate-200 self-stretch my-1 mx-1" />
+            
+            <button onClick={() => setViewStartDate(prev => addDays(prev, 7))} className="p-1.5 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 rounded-md transition-colors" title="Следващи 7 дни">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
             </button>
           </div>
@@ -140,7 +152,7 @@ export default function App() {
                   <span>{isSortedNum ? '102 -> 217' : 'По подразбиране'}</span>
                 </button>
               </th>
-              {weekDays.map((date, index) => {
+              {displayedDays.map((date, index) => {
                 const isCurrentDay = isToday(date);
                 const isHovered = hoveredDateStr === format(date, 'yyyy-MM-dd');
                 return (
@@ -175,7 +187,7 @@ export default function App() {
                   </div>
                 </td>
                 
-                {weekDays.map((date, index) => {
+                {displayedDays.map((date, index) => {
                   const dateStr = format(date, 'yyyy-MM-dd');
                   const isHovered = hoveredDateStr === dateStr;
                   const booking = bookings.find(b => b.room.id === room.id && date >= parseISO(b.startDate) && date < parseISO(b.endDate));
@@ -243,7 +255,7 @@ export default function App() {
           <tfoot className="sticky bottom-0 z-30 bg-slate-100 shadow-[0_-1px_0_#cbd5e1]">
             <tr>
               <td className="p-3 border-r border-slate-200 font-bold text-slate-700 sticky left-0 z-40 bg-slate-100 shadow-[1px_0_0_#cbd5e1]">Общо за деня</td>
-              {weekDays.map((date, index) => {
+              {displayedDays.map((date, index) => {
                 const dateStr = format(date, 'yyyy-MM-dd');
                 const isHovered = hoveredDateStr === dateStr;
                 const hasNote = dailyNotes.some(n => n.date === dateStr && n.text.trim().length > 0);
@@ -262,7 +274,7 @@ export default function App() {
         </table>
       </div>
       
-      <div className="pb-12">
+      <div className="pb-[400px]">
         <ProfitCalculator rooms={rooms} bookings={bookings} />
       </div>
 

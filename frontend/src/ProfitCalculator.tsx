@@ -70,8 +70,11 @@ export default function ProfitCalculator({ rooms, bookings }: ProfitCalculatorPr
           Справка Приходи
         </h2>
 
-        <div className="flex gap-4 mb-5">
-          <div className="flex-1">
+        {/* 1. Added flex-row to force side-by-side layout */}
+        <div className="flex flex-row gap-4 mb-5">
+          
+          {/* 2. Added min-w-0 so Flexbox doesn't accidentally crush the inputs */}
+          <div className="flex-1 min-w-0">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">От дата</label>
             <DatePicker
               selected={startDate}
@@ -79,10 +82,12 @@ export default function ProfitCalculator({ rooms, bookings }: ProfitCalculatorPr
               dateFormat="dd/MM/yyyy"
               locale={bg}
               placeholderText="Начална дата"
+              popperPlacement="bottom-start"
               className="w-full px-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-medium h-10 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
             />
           </div>
-          <div className="flex-1">
+          
+          <div className="flex-1 min-w-0">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">До дата</label>
             <DatePicker
               selected={endDate}
@@ -91,10 +96,13 @@ export default function ProfitCalculator({ rooms, bookings }: ProfitCalculatorPr
               locale={bg}
               minDate={startDate || undefined}
               placeholderText="Крайна дата"
+              popperPlacement="bottom-start"
               className="w-full px-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-medium h-10 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
             />
           </div>
+          
         </div>
+        
 
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex justify-between items-end">
